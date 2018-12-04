@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 2.8.3)
-project(ds4)
+project(ds4_msgs)
 
 add_compile_options(-std=c++11)
 
@@ -21,8 +21,7 @@ generate_messages(
 )
 
 catkin_package(
-#  INCLUDE_DIRS include
-#  LIBRARIES ds4_driver
-#  CATKIN_DEPENDS other_catkin_pkg
-#  DEPENDS system_lib
+  CATKIN_DEPENDS
+  message_runtime
+  std_msgs
 )

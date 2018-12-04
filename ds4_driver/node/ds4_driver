@@ -31,13 +31,16 @@
   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 """
 
-import os, signal, shlex, subprocess
+import os
+import signal
+import shlex
+import subprocess
 
 import rospy
 from sensor_msgs.msg import Joy
-from ds4.msg import DS4
+from ds4_msgs.msg import DS4
 
-class DS4Node():
+class DS4Driver():
     def __init__(self):
         signal.signal(signal.SIGINT, self.shutdown)
 
@@ -160,6 +163,6 @@ class DS4Node():
             self.ds4_msg.gyro_yaw = -self.joy_msg.axes[12]
 
 if __name__ == '__main__':
-    rospy.init_node("ds4", anonymous=True)
-    node = DS4Node()
+    rospy.init_node("ds4_driver", anonymous=True)
+    node = DS4Driver()
     node.run()
