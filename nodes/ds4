@@ -1,0 +1,165 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+"""
+  Copyright (c) 2018, Nagoya University
+  All rights reserved.
+
+  Redistribution and use in source and binary forms, with or without
+  modification, are permitted provided that the following conditions are met:
+
+  * Redistributions of source code must retain the above copyright notice, this
+    list of conditions and the following disclaimer.
+
+  * Redistributions in binary form must reproduce the above copyright notice,
+    this list of conditions and the following disclaimer in the documentation
+    and/or other materials provided with the distribution.
+
+  * Neither the name of Autoware nor the names of its
+    contributors may be used to endorse or promote products derived from
+    this software without specific prior written permission.
+
+  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+  AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+  DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+  FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+  DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+  SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+  CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+  OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+"""
+
+import os, signal, shlex, subprocess
+
+import rospy
+from sensor_msgs.msg import Joy
+from ds4.msg import DS4
+
+class DS4Node():
+    def __init__(self):
+        signal.signal(signal.SIGINT, self.shutdown)
+
+        self.joy_sub = rospy.Subscriber("joy", Joy, self.joy_callback)
+        self.ds4_pub = rospy.Publisher("ds4", DS4, queue_size=10)
+
+        self.wired = rospy.get_param("~wired", True)
+        self.input = rospy.get_param("~input", "/dev/input/js0")
+        self.uinput = rospy.get_param("~uinput", "/dev/uinput")
+        self.rate = rospy.Rate(rospy.get_param("~rate", 100))
+        self.timeout = rospy.get_param("~timeout", 1.0)
+
+        self.is_shutdown = False
+        self.pid_bt = None
+
+        self.joy_msg = None
+        self.ds4_msg = DS4()
+        self.ds4_msg.connected = False
+
+    def shutdown(self, signal, frame):
+        if self.pid_bt is not None:
+            self.pid_bt.kill()
+            self.pid_bt.wait()
+        self.is_shutdown = True
+
+    def run(self):
+        if not self.wired:
+            self.connect_bluetooth()
+
+        while not self.is_shutdown:
+            if self.joy_msg is None:
+                rospy.logerr("%s is not published yet, waiting...", self.joy_sub.name)
+                rospy.sleep(rospy.Duration(1.0))
+            else:
+                if self.check_connection():
+                    self.ds4_pub.publish(self.ds4_msg)
+                    self.rate.sleep()
+                else:
+                    self.ds4_msg = DS4()
+                    self.ds4_msg.connected = False
+                    self.ds4_pub.publish(self.ds4_msg)
+                    rospy.logerr("%s is disconnected, waiting...", self.input)
+                    rospy.sleep(rospy.Duration(1.0))
+
+    def connect_bluetooth(self):
+        if not os.access(self.uinput, os.W_OK):
+            os.chmod(self.uinput, 0755)
+        self.pid_bt = subprocess.Popen(shlex.split("ds4drv"))
+
+    def check_connection(self):
+        if self.wired:
+            return os.path.exists(self.input)
+        else:
+            dt = rospy.Time.now() - self.ds4_msg.header.stamp
+            return not (dt.to_sec() > self.timeout)
+
+    def joy_callback(self, msg):
+        self.joy_msg = msg
+        self.ds4_msg.header = self.joy_msg.header
+        self.ds4_msg.connected = True
+
+        if self.wired:
+            self.ds4_msg.square   = (self.joy_msg.buttons[0] == 1)
+            self.ds4_msg.cross    = (self.joy_msg.buttons[1] == 1)
+            self.ds4_msg.circle   = (self.joy_msg.buttons[2] == 1)
+            self.ds4_msg.triangle = (self.joy_msg.buttons[3] == 1)
+            self.ds4_msg.up       = (self.joy_msg.axes[7] == 1)
+            self.ds4_msg.right    = (self.joy_msg.axes[6] == -1)
+            self.ds4_msg.down     = (self.joy_msg.axes[7] == -1)
+            self.ds4_msg.left     = (self.joy_msg.axes[6] == 1)
+            self.ds4_msg.l1       = (self.joy_msg.buttons[4] == 1)
+            self.ds4_msg.r1       = (self.joy_msg.buttons[5] == 1)
+            self.ds4_msg.l2       = -(self.joy_msg.axes[3]) / 2.0 + 0.5
+            self.ds4_msg.r2       = -(self.joy_msg.axes[4]) / 2.0 + 0.5
+            self.ds4_msg.l3       = (self.joy_msg.buttons[10] == 1)
+            self.ds4_msg.r3       = (self.joy_msg.buttons[11] == 1)
+            self.ds4_msg.left_x   = self.joy_msg.axes[1]
+            self.ds4_msg.left_y   = self.joy_msg.axes[0]
+            self.ds4_msg.right_x  = self.joy_msg.axes[5]
+            self.ds4_msg.right_y  = self.joy_msg.axes[2]
+            self.ds4_msg.share    = (self.joy_msg.buttons[8] == 1)
+            self.ds4_msg.option   = (self.joy_msg.buttons[9] == 1)
+            self.ds4_msg.ps       = (self.joy_msg.buttons[12] == 1)
+            self.ds4_msg.touchpad = False
+            self.ds4_msg.acc_x    = 0.0
+            self.ds4_msg.acc_y    = 0.0
+            self.ds4_msg.acc_z    = 0.0
+            self.ds4_msg.gyro_rol = 0.0
+            self.ds4_msg.gyro_pit = 0.0
+            self.ds4_msg.gyro_yaw = 0.0
+
+        else:
+            self.ds4_msg.square   = (self.joy_msg.buttons[0] == 1)
+            self.ds4_msg.cross    = (self.joy_msg.buttons[1] == 1)
+            self.ds4_msg.circle   = (self.joy_msg.buttons[2] == 1)
+            self.ds4_msg.triangle = (self.joy_msg.buttons[3] == 1)
+            self.ds4_msg.up       = (self.joy_msg.axes[10] == 1)
+            self.ds4_msg.right    = (self.joy_msg.axes[9] == -1)
+            self.ds4_msg.down     = (self.joy_msg.axes[10] == -1)
+            self.ds4_msg.left     = (self.joy_msg.axes[9] == 1)
+            self.ds4_msg.l1       = (self.joy_msg.buttons[4] == 1)
+            self.ds4_msg.r1       = (self.joy_msg.buttons[5] == 1)
+            self.ds4_msg.l2       = -(self.joy_msg.axes[3]) / 2.0 + 0.5
+            self.ds4_msg.r2       = -(self.joy_msg.axes[4]) / 2.0 + 0.5
+            self.ds4_msg.l3       = (self.joy_msg.buttons[10] == 1)
+            self.ds4_msg.r3       = (self.joy_msg.buttons[11] == 1)
+            self.ds4_msg.left_x   = self.joy_msg.axes[1]
+            self.ds4_msg.left_y   = self.joy_msg.axes[0]
+            self.ds4_msg.right_x  = self.joy_msg.axes[5]
+            self.ds4_msg.right_y  = self.joy_msg.axes[2]
+            self.ds4_msg.share    = (self.joy_msg.buttons[8] == 1)
+            self.ds4_msg.option   = (self.joy_msg.buttons[9] == 1)
+            self.ds4_msg.ps       = (self.joy_msg.buttons[12] == 1)
+            self.ds4_msg.touchpad = (self.joy_msg.buttons[13] == 1)
+            self.ds4_msg.acc_x    = -self.joy_msg.axes[7]
+            self.ds4_msg.acc_y    = self.joy_msg.axes[6]
+            self.ds4_msg.acc_z    = self.joy_msg.axes[8]
+            self.ds4_msg.gyro_rol = self.joy_msg.axes[11]
+            self.ds4_msg.gyro_pit = self.joy_msg.axes[13]
+            self.ds4_msg.gyro_yaw = -self.joy_msg.axes[12]
+
+if __name__ == '__main__':
+    rospy.init_node("ds4", anonymous=True)
+    node = DS4Node()
+    node.run()

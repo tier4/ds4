@@ -1,0 +1,21 @@
+<!--  -->
+<launch>
+  <arg name="wired" default="true" />
+  <arg name="input" default="/dev/input/js0" />
+  <arg name="uinput" default="/dev/uinput" />
+  <arg name="timeout" default="1.0" />
+  <arg name="rate" default="100" />
+
+  <node pkg="ds4" name="ds4" type="ds4" output="screen">
+    <param name="wired" value="$(arg wired)" />
+    <param name="input" value="$(arg input)" />
+    <param name="uinput" value="$(arg uinput)" />
+    <param name="timeout" value="$(arg timeout)" />
+    <param name="rate" value="$(arg rate)" />
+  </node>
+
+  <node pkg="joy" name="joy_node" type="joy_node" output="screen">
+    <param name="dev" value="$(arg input)" />
+  </node>
+
+</launch>
