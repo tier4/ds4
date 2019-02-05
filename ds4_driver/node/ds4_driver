@@ -39,7 +39,7 @@ class DS4Driver():
         self.input = rospy.get_param("~input", "/dev/input/js0")
         self.uinput = rospy.get_param("~uinput", "/dev/uinput")
         self.rate = rospy.Rate(rospy.get_param("~rate", 100))
-        self.timeout = rospy.get_param("~timeout", 1.0)
+        self.timeout = rospy.get_param("~timeout", 1000)
 
         self.is_shutdown = False
         self.pid_bt = None
@@ -110,7 +110,7 @@ class DS4Driver():
             return os.path.exists(self.input)
         else:
             dt = rospy.Time.now() - self.joy_msg.header.stamp
-            return not (dt.to_sec() > self.timeout)
+            return not (dt.to_sec() * 1000 > self.timeout)
 
     def joy_callback(self, msg):
         self.joy_msg = msg
