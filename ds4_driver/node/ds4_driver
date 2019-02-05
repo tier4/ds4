@@ -28,7 +28,7 @@ from ds4_msgs.msg import DS4
 
 class DS4Driver():
     def __init__(self):
-        signal.signal(signal.SIGINT, self.shutdown)
+        rospy.on_shutdown(self.shutdown)
 
         self.joy_sub = rospy.Subscriber("joy", Joy, self.joy_callback)
         self.ds4_pub = rospy.Publisher("ds4", DS4, queue_size=10)
@@ -46,46 +46,59 @@ class DS4Driver():
         self.ds4_msg = DS4()
         self.ds4_msg.connected = False
 
-    def shutdown(self, signal, frame):
+    def shutdown(self):
         if self.pid_bt is not None:
             self.pid_bt.kill()
             self.pid_bt.wait()
         self.is_shutdown = True
 
     def run(self):
-        if not self.wired:
-            self.connect_bluetooth()
+        if self.wired:
+            if not self.connect_usb():
+                rospy.logerr("Cannot be opened, connect %s", self.input)
+                return
+        else:
+            if not self.connect_bluetooth():
+                rospy.logerr("Cannot be opened, check permission of %s", self.uinput)
+                return
 
         while not self.is_shutdown:
             if self.joy_msg is None:
                 rospy.logerr("%s is not published yet, waiting...", self.joy_sub.name)
                 rospy.sleep(rospy.Duration(1.0))
+
             else:
-                if self.check_connection():
+                self.ds4_msg.header.frame_id = "ds4"
+                self.ds4_msg.header.stamp = rospy.Time.now()
+                self.ds4_msg.connected = self.check_connection()
+
+                if self.ds4_msg.connected:
                     self.ds4_pub.publish(self.ds4_msg)
                     self.rate.sleep()
                 else:
-                    self.ds4_msg = DS4()
-                    self.ds4_msg.connected = False
                     self.ds4_pub.publish(self.ds4_msg)
                     rospy.logerr("%s is disconnected, waiting...", self.input)
                     rospy.sleep(rospy.Duration(1.0))
 
+    def connect_usb(self):
+        return (os.path.exists(self.input) and os.access(self.input, os.R_OK))
+
     def connect_bluetooth(self):
         if not os.access(self.uinput, os.W_OK):
-            os.chmod(self.uinput, 0755)
-        self.pid_bt = subprocess.Popen(shlex.split("ds4drv"))
+            return False
+        else:
+            self.pid_bt = subprocess.Popen(shlex.split("ds4drv"))
+            return True
 
     def check_connection(self):
         if self.wired:
             return os.path.exists(self.input)
         else:
-            dt = rospy.Time.now() - self.ds4_msg.header.stamp
+            dt = rospy.Time.now() - self.joy_msg.header.stamp
             return not (dt.to_sec() > self.timeout)
 
     def joy_callback(self, msg):
         self.joy_msg = msg
-        self.ds4_msg.header = self.joy_msg.header
         self.ds4_msg.connected = True
 
         if self.wired:
@@ -148,7 +161,7 @@ class DS4Driver():
             self.ds4_msg.gyro_pit = self.joy_msg.axes[13]
             self.ds4_msg.gyro_yaw = -self.joy_msg.axes[12]
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     rospy.init_node("ds4_driver", anonymous=True)
     node = DS4Driver()
     node.run()
