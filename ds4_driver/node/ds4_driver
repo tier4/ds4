@@ -18,6 +18,7 @@
 """
 
 import os
+import math
 import signal
 import shlex
 import subprocess
@@ -34,6 +35,7 @@ class DS4Driver():
         self.ds4_pub = rospy.Publisher("ds4", DS4, queue_size=10)
 
         self.wired = rospy.get_param("~wired", True)
+        self.wired_mode = rospy.get_param("~wired_mode", 0)
         self.input = rospy.get_param("~input", "/dev/input/js0")
         self.uinput = rospy.get_param("~uinput", "/dev/uinput")
         self.rate = rospy.Rate(rospy.get_param("~rate", 100))
@@ -46,11 +48,16 @@ class DS4Driver():
         self.ds4_msg = DS4()
         self.ds4_msg.connected = False
 
+        self.reset()
+
     def shutdown(self):
         if self.pid_bt is not None:
             self.pid_bt.kill()
             self.pid_bt.wait()
         self.is_shutdown = True
+
+    def reset(self):
+        self.axes_initialized = False
 
     def run(self):
         if self.wired:
@@ -66,19 +73,24 @@ class DS4Driver():
             if self.joy_msg is None:
                 rospy.logerr("%s is not published yet, waiting...", self.joy_sub.name)
                 rospy.sleep(rospy.Duration(1.0))
-
             else:
+                if not self.axes_initialized:
+                    self.axes_initialized = self.check_axes_initialized()
+                    rospy.logerr("Press L2/R2 trigger for initialization, waiting...")
+                    rospy.sleep(rospy.Duration(1.0))
+                    continue
+
                 self.ds4_msg.header.frame_id = "ds4"
                 self.ds4_msg.header.stamp = rospy.Time.now()
                 self.ds4_msg.connected = self.check_connection()
+                self.ds4_pub.publish(self.ds4_msg)
 
-                if self.ds4_msg.connected:
-                    self.ds4_pub.publish(self.ds4_msg)
-                    self.rate.sleep()
-                else:
-                    self.ds4_pub.publish(self.ds4_msg)
+                if not self.ds4_msg.connected:
+                    self.reset()
                     rospy.logerr("%s is disconnected, waiting...", self.input)
                     rospy.sleep(rospy.Duration(1.0))
+                else:
+                    self.rate.sleep()
 
     def connect_usb(self):
         return (os.path.exists(self.input) and os.access(self.input, os.R_OK))
@@ -89,6 +101,9 @@ class DS4Driver():
         else:
             self.pid_bt = subprocess.Popen(shlex.split("ds4drv"))
             return True
+
+    def check_axes_initialized(self):
+        return (abs(self.ds4_msg.l2 - 1.0) < 1e-3 and abs(self.ds4_msg.r2 - 1.0) < 1e-3)
 
     def check_connection(self):
         if self.wired:
@@ -102,27 +117,14 @@ class DS4Driver():
         self.ds4_msg.connected = True
 
         if self.wired:
-            self.ds4_msg.square   = (self.joy_msg.buttons[0] == 1)
-            self.ds4_msg.cross    = (self.joy_msg.buttons[1] == 1)
-            self.ds4_msg.circle   = (self.joy_msg.buttons[2] == 1)
-            self.ds4_msg.triangle = (self.joy_msg.buttons[3] == 1)
             self.ds4_msg.up       = (self.joy_msg.axes[7] == 1)
             self.ds4_msg.right    = (self.joy_msg.axes[6] == -1)
             self.ds4_msg.down     = (self.joy_msg.axes[7] == -1)
             self.ds4_msg.left     = (self.joy_msg.axes[6] == 1)
             self.ds4_msg.l1       = (self.joy_msg.buttons[4] == 1)
             self.ds4_msg.r1       = (self.joy_msg.buttons[5] == 1)
-            self.ds4_msg.l2       = -(self.joy_msg.axes[3]) / 2.0 + 0.5
-            self.ds4_msg.r2       = -(self.joy_msg.axes[4]) / 2.0 + 0.5
-            self.ds4_msg.l3       = (self.joy_msg.buttons[10] == 1)
-            self.ds4_msg.r3       = (self.joy_msg.buttons[11] == 1)
-            self.ds4_msg.left_x   = self.joy_msg.axes[1]
-            self.ds4_msg.left_y   = self.joy_msg.axes[0]
-            self.ds4_msg.right_x  = self.joy_msg.axes[5]
-            self.ds4_msg.right_y  = self.joy_msg.axes[2]
             self.ds4_msg.share    = (self.joy_msg.buttons[8] == 1)
             self.ds4_msg.option   = (self.joy_msg.buttons[9] == 1)
-            self.ds4_msg.ps       = (self.joy_msg.buttons[12] == 1)
             self.ds4_msg.touchpad = False
             self.ds4_msg.acc_x    = 0.0
             self.ds4_msg.acc_y    = 0.0
@@ -130,6 +132,36 @@ class DS4Driver():
             self.ds4_msg.gyro_rol = 0.0
             self.ds4_msg.gyro_pit = 0.0
             self.ds4_msg.gyro_yaw = 0.0
+            if self.wired_mode == 0:
+                self.ds4_msg.square   = (self.joy_msg.buttons[3] == 1)
+                self.ds4_msg.cross    = (self.joy_msg.buttons[0] == 1)
+                self.ds4_msg.circle   = (self.joy_msg.buttons[1] == 1)
+                self.ds4_msg.triangle = (self.joy_msg.buttons[2] == 1)
+                self.ds4_msg.l2       = -(self.joy_msg.axes[2]) / 2.0 + 0.5
+                self.ds4_msg.r2       = -(self.joy_msg.axes[5]) / 2.0 + 0.5
+                self.ds4_msg.l3       = (self.joy_msg.buttons[11] == 1)
+                self.ds4_msg.r3       = (self.joy_msg.buttons[12] == 1)
+                self.ds4_msg.left_x   = self.joy_msg.axes[1]
+                self.ds4_msg.left_y   = self.joy_msg.axes[0]
+                self.ds4_msg.right_x  = self.joy_msg.axes[4]
+                self.ds4_msg.right_y  = self.joy_msg.axes[3]
+                self.ds4_msg.ps       = (self.joy_msg.buttons[10] == 1)
+            elif self.wired_mode == 1:
+                self.ds4_msg.square   = (self.joy_msg.buttons[0] == 1)
+                self.ds4_msg.cross    = (self.joy_msg.buttons[1] == 1)
+                self.ds4_msg.circle   = (self.joy_msg.buttons[2] == 1)
+                self.ds4_msg.triangle = (self.joy_msg.buttons[3] == 1)
+                self.ds4_msg.l2       = -(self.joy_msg.axes[3]) / 2.0 + 0.5
+                self.ds4_msg.r2       = -(self.joy_msg.axes[4]) / 2.0 + 0.5
+                self.ds4_msg.l3       = (self.joy_msg.buttons[10] == 1)
+                self.ds4_msg.r3       = (self.joy_msg.buttons[11] == 1)
+                self.ds4_msg.left_x   = self.joy_msg.axes[1]
+                self.ds4_msg.left_y   = self.joy_msg.axes[0]
+                self.ds4_msg.right_x  = self.joy_msg.axes[5]
+                self.ds4_msg.right_y  = self.joy_msg.axes[2]
+                self.ds4_msg.ps       = (self.joy_msg.buttons[12] == 1)
+            else:
+                rospy.logerr("Wired mode '%d' is not implemented", self.wired_mode)
 
         else:
             self.ds4_msg.square   = (self.joy_msg.buttons[0] == 1)
