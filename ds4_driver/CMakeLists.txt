@@ -9,3 +9,12 @@ catkin_package(
   CATKIN_DEPENDS
   sensor_msgs
 )
+
+catkin_install_python(PROGRAMS
+        node/ds4_driver
+        DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+)
+
+install(DIRECTORY launch/
+        DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/launch
+        PATTERN ".svn" EXCLUDE)
