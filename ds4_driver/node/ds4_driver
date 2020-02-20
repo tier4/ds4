@@ -40,6 +40,7 @@ class DS4Driver():
         self.uinput = rospy.get_param("~uinput", "/dev/uinput")
         self.rate = rospy.Rate(rospy.get_param("~rate", 100))
         self.timeout = rospy.get_param("~timeout", 1000)
+        self.skip_axes_initialization = rospy.get_param("~skip_axes_initialization", False)
 
         self.is_shutdown = False
         self.pid_bt = None
@@ -58,6 +59,8 @@ class DS4Driver():
 
     def reset(self):
         self.axes_initialized = False
+        if self.skip_axes_initialization:
+            self.axes_initialized = True
 
     def run(self):
         if self.wired:
