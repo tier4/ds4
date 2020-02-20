@@ -74,12 +74,12 @@ class DS4Driver():
 
         while not self.is_shutdown:
             if self.joy_msg is None:
-                rospy.logerr("%s is not published yet, waiting...", self.joy_sub.name)
+                rospy.loginfo("%s is not published yet, waiting...", self.joy_sub.name)
                 rospy.sleep(rospy.Duration(1.0))
             else:
                 if not self.axes_initialized:
                     self.axes_initialized = self.check_axes_initialized()
-                    rospy.logerr("Press L2/R2 trigger for initialization, waiting...")
+                    rospy.loginfo("Press L2/R2 trigger for initialization, waiting...")
                     rospy.sleep(rospy.Duration(1.0))
                     continue
 
@@ -90,7 +90,7 @@ class DS4Driver():
 
                 if not self.ds4_msg.connected:
                     self.reset()
-                    rospy.logerr("%s is disconnected, waiting...", self.input)
+                    rospy.logwarn("%s is disconnected, waiting...", self.input)
                     rospy.sleep(rospy.Duration(1.0))
                 else:
                     self.rate.sleep()
