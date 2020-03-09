@@ -84,7 +84,6 @@ class DS4Driver():
                     continue
 
                 self.ds4_msg.header.frame_id = "ds4"
-                self.ds4_msg.header.stamp = rospy.Time.now()
                 self.ds4_msg.connected = self.check_connection()
                 self.ds4_pub.publish(self.ds4_msg)
 
@@ -117,6 +116,7 @@ class DS4Driver():
 
     def joy_callback(self, msg):
         self.joy_msg = msg
+        self.ds4_msg.header.stamp = self.joy_msg.header.stamp;
         self.ds4_msg.connected = True
 
         if self.wired:
